@@ -5,6 +5,7 @@ dotenv.config();
 
 const pool: Pool = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
+  port: parseInt(process.env.DB_PORT || "3306"), // 👈 Add this line
   user: process.env.DB_USER || "chatbot_user",
   password: process.env.DB_PASSWORD || "secure_password",
   database: process.env.DB_NAME || "college_chatbot",

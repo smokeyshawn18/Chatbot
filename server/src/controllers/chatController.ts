@@ -4,7 +4,6 @@ import pool from "../config/db";
 import { ChatRequest, Routine, Event, ExamRoutine } from "../interfaces/types";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Initialize Gemini API client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export const handleChat = async (
@@ -18,11 +17,33 @@ export const handleChat = async (
       "Sorry, I didn’t understand that. Try asking about your schedule, exam routine, or upcoming events!";
     let query: string | undefined;
     let params: any[] = [];
-    let dataFound = false; // Flag to track if database data was found
+    let dataFound = false;
 
     const lowerMessage = message.toLowerCase().trim();
 
-    // Check for exam-related queries
+    if (
+      lowerMessage.includes("man city players") ||
+      lowerMessage.includes("man city squad")
+    ) {
+      query = `
+        SELECT name, position, nationality, goals, assists, appearances
+        FROM man_city_players
+        ORDER BY goals DESC
+      `;
+
+      const [rows] = await pool.execute<RowDataPacket[]>(query);
+      const players = rows;
+
+      if (players.length > 0) {
+        dataFound = true;
+        response = "Here are the Man City players stats:\n";
+        players.forEach((player) => {
+          response += `${player.name} - ${player.position} (${player.nationality}) | Goals: ${player.goals}, Assists: ${player.assists}, Appearances: ${player.appearances}\n`;
+        });
+      }
+    }
+
+    // Exam-related queries
     if (
       lowerMessage.includes("exam") ||
       lowerMessage.includes("exam routine") ||
@@ -48,15 +69,22 @@ export const handleChat = async (
         dataFound = true;
         response = "📚 Your exam routine:\n";
         exams.forEach((row) => {
-          const examDate = new Date(row.exam_date).toLocaleDateString();
+          // Use toLocaleDateString with options if you want
+          const examDate = new Date(row.exam_date).toLocaleDateString(
+            undefined,
+            {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            }
+          );
           const startTime = row.start_time.slice(0, 5);
           const endTime = row.end_time.slice(0, 5);
           response += `${row.exam_name} - ${row.subject} on ${examDate} from ${startTime} to ${endTime} in room ${row.room_no} (Invigilator: ${row.invigilator})\n`;
         });
       }
     }
-
-    // Check for regular schedules/routines
+    // Schedule/routine queries
     else if (
       lowerMessage.includes("schedule") ||
       lowerMessage.includes("routine")
@@ -66,7 +94,7 @@ export const handleChat = async (
         FROM routines r 
         JOIN users u ON r.semester = u.semester 
         WHERE u.username = ? 
-        ORDER BY r.day, r.start_time
+        ORDER BY FIELD(r.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'), r.start_time
       `;
       params = [username];
 
@@ -81,8 +109,7 @@ export const handleChat = async (
         });
       }
     }
-
-    // Check for events
+    // Events queries
     else if (
       lowerMessage.includes("event") ||
       lowerMessage.includes("events")
@@ -96,28 +123,31 @@ export const handleChat = async (
         dataFound = true;
         response = "Upcoming events:\n";
         events.forEach((row) => {
-          response += `${row.event_name} on ${new Date(
-            row.event_date
-          ).toLocaleDateString()} at ${row.location}: ${row.description}\n`;
+          const eventDate = new Date(row.event_date).toLocaleDateString(
+            undefined,
+            {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            }
+          );
+          response += `${row.event_name} on ${eventDate} at ${row.location}: ${row.description}\n`;
         });
       }
     }
 
-    // If no data found in the database, query Gemini API
+    // If no data found, call Gemini API
     if (!dataFound) {
       if (!process.env.GEMINI_API_KEY) {
         throw new Error("Gemini API key is not configured.");
       }
 
-      // Initialize the Gemini model (e.g., gemini-1.5-flash)
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-      // Prepare the prompt for Gemini
       const prompt = `You are a helpful chatbot for a university. The user asked: "${message}". 
       Since no specific schedule, exam, or event data was found in the database, provide a general response to the user's query. 
       Keep the response concise, friendly, and relevant to a university context.`;
 
-      // Generate content using Gemini API
       const result = await model.generateContent(prompt);
       const geminiResponse = await result.response.text();
 
