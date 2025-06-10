@@ -11,7 +11,7 @@ const TypingIndicator = () => (
     aria-label="Bot is typing"
   >
     <Loader2 className="animate-spin w-5 h-5" />
-    <span>McITyX is typing...</span>
+    <span>McITyX is thinking...</span>
   </motion.div>
 );
 

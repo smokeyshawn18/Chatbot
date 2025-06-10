@@ -1,10 +1,27 @@
 import { Request, Response } from "express";
 import { RowDataPacket } from "mysql2";
 import pool from "../config/db";
-import { ChatRequest, Routine, Event, ExamRoutine } from "../interfaces/types";
+import {
+  ChatRequest,
+  Routine,
+  Event,
+  ExamRoutine,
+  Player,
+  Fixture,
+  NewsArticle,
+} from "../interfaces/types";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import axios from "axios";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const apiFootballKey = process.env.API_FOOTBALL_KEY || "";
+
+const apiFootball = axios.create({
+  baseURL: "https://v3.football.api-sports.io/",
+  headers: {
+    "x-rapidapi-key": apiFootballKey,
+  },
+});
 
 export const handleChat = async (
   req: Request<{}, {}, ChatRequest>,
@@ -14,31 +31,60 @@ export const handleChat = async (
 
   try {
     let response =
-      "Sorry, I didn’t understand that. Try asking about your schedule, exam routine, or upcoming events!";
+      "Sorry, I didn’t understand that. Try asking about Man City news, players, or fixtures!";
     let query: string | undefined;
     let params: any[] = [];
     let dataFound = false;
 
     const lowerMessage = message.toLowerCase().trim();
 
+    // Man City-related queries
     if (
       lowerMessage.includes("man city players") ||
       lowerMessage.includes("man city squad")
     ) {
-      query = `
-        SELECT name, position, nationality, goals, assists, appearances
-        FROM man_city_players
-        ORDER BY goals DESC
-      `;
-
-      const [rows] = await pool.execute<RowDataPacket[]>(query);
-      const players = rows;
+      const playersResponse = await apiFootball.get("players/squads", {
+        params: { team: "50" },
+      });
+      const players: Player[] = playersResponse.data.response[0].players;
 
       if (players.length > 0) {
         dataFound = true;
-        response = "Here are the Man City players stats:\n";
-        players.forEach((player) => {
-          response += `${player.name} - ${player.position} (${player.nationality}) | Goals: ${player.goals}, Assists: ${player.assists}, Appearances: ${player.appearances}\n`;
+        response = "Here are the Man City players:\n";
+        players.forEach((player: Player) => {
+          response += `${player.name} - ${player.position}\n`;
+        });
+      }
+    } else if (
+      lowerMessage.includes("man city fixtures") ||
+      lowerMessage.includes("man city schedule")
+    ) {
+      const fixturesResponse = await apiFootball.get("fixtures", {
+        params: { team: "50", next: "5" },
+      });
+      const fixtures: Fixture[] = fixturesResponse.data.response;
+
+      if (fixtures.length > 0) {
+        dataFound = true;
+        response = "Here are the next 5 Man City fixtures:\n";
+        fixtures.forEach((fixture: Fixture) => {
+          response += `${fixture.teams.home.name} vs ${fixture.teams.away.name} on ${fixture.fixture.date}\n`;
+        });
+      }
+    } else if (
+      lowerMessage.includes("man city news") ||
+      lowerMessage.includes("man city latest")
+    ) {
+      const newsResponse = await apiFootball.get("news", {
+        params: { team: "50" },
+      });
+      const news: NewsArticle[] = newsResponse.data.response;
+
+      if (news.length > 0) {
+        dataFound = true;
+        response = "Here are the latest Man City news:\n";
+        news.forEach((article: NewsArticle) => {
+          response += `${article.title} - ${article.content}\n`;
         });
       }
     }
@@ -63,13 +109,12 @@ export const handleChat = async (
       params = [username];
 
       const [rows] = await pool.execute<RowDataPacket[]>(query, params);
-      const exams = rows as ExamRoutine[];
+      const exams: ExamRoutine[] = rows as ExamRoutine[];
 
       if (exams.length > 0) {
         dataFound = true;
         response = "📚 Your exam routine:\n";
-        exams.forEach((row) => {
-          // Use toLocaleDateString with options if you want
+        exams.forEach((row: ExamRoutine) => {
           const examDate = new Date(row.exam_date).toLocaleDateString(
             undefined,
             {
@@ -99,12 +144,12 @@ export const handleChat = async (
       params = [username];
 
       const [rows] = await pool.execute<RowDataPacket[]>(query, params);
-      const routines = rows as Routine[];
+      const routines: Routine[] = rows as Routine[];
 
       if (routines.length > 0) {
         dataFound = true;
         response = "Here’s your schedule:\n";
-        routines.forEach((row) => {
+        routines.forEach((row: Routine) => {
           response += `${row.day}: ${row.subject} from ${row.start_time} to ${row.end_time} in ${row.room} with ${row.instructor}\n`;
         });
       }
@@ -117,12 +162,12 @@ export const handleChat = async (
       query = `SELECT event_name, event_date, location, description FROM events ORDER BY event_date`;
 
       const [rows] = await pool.execute<RowDataPacket[]>(query);
-      const events = rows as Event[];
+      const events: Event[] = rows as Event[];
 
       if (events.length > 0) {
         dataFound = true;
         response = "Upcoming events:\n";
-        events.forEach((row) => {
+        events.forEach((row: Event) => {
           const eventDate = new Date(row.event_date).toLocaleDateString(
             undefined,
             {
@@ -144,9 +189,7 @@ export const handleChat = async (
 
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-      const prompt = `You are a helpful chatbot for a university. The user asked: "${message}". 
-      Since no specific schedule, exam, or event data was found in the database, provide a general response to the user's query. 
-      Keep the response concise, friendly, and relevant to a university context.`;
+      const prompt = `You are a helpful chatbot for Manchester City Football Club. The user asked: "${message}". Since no specific match, player, or event data was found in the database, provide a general response to the user's query. Keep the response concise, friendly, and relevant to Manchester City or football.`;
 
       const result = await model.generateContent(prompt);
       const geminiResponse = await result.response.text();

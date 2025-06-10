@@ -32,7 +32,8 @@ export const useChatbot = (username: string) => {
 
     try {
       const response = await axios.post<{ reply: string }>(
-        "https://mcityxai.onrender.com/api/chat",
+        // "https://mcityxai.onrender.com/api/chat"
+        "http://localhost:3001/api/chat", // Use your local or deployed endpoint
         { message: text, username }
       );
       const botMessage: Message = { text: response.data.reply, sender: "bot" };

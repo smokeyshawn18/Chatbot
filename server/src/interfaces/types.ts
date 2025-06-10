@@ -30,3 +30,23 @@ export interface ExamRoutine {
   room_no?: string | null;
   invigilator?: string | null;
 }
+
+export interface Player {
+  name: string;
+  position: string;
+}
+
+export interface Fixture {
+  teams: {
+    home: { name: string };
+    away: { name: string };
+  };
+  fixture: {
+    date: string;
+  };
+}
+
+export interface NewsArticle {
+  title: string;
+  content: string;
+}
